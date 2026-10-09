@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>دخول عن بُعد</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,sans-serif;max-width:760px;margin:0 auto;padding:12px;background:#0f0f10;color:#eee}
+  canvas{width:100%;background:#222;border-radius:10px;touch-action:none;display:block}
+  .row{display:flex;gap:6px;margin:6px 0}
+  input,button{padding:11px;border-radius:10px;border:1px solid #2c2c2e;background:#1a1a1c;color:#eee;font-size:16px;font-family:inherit}
+  input{flex:1;min-width:0}
+  button{white-space:nowrap}
+  #save{background:#1f8f4e;border:0;font-weight:700}
+  #msg{font-size:14px;min-height:20px;color:#9ab}
+  .ok{color:#6fdc8c!important}.err{color:#ff7b7b!important}
+  a{color:#6aa8ff}
+  small{color:#777;word-break:break-all}
+</style>
+</head>
+<body>
+<p><a href="/">← رجوع</a></p>
+<div id="msg">جارٍ الاتصال بمتصفح السيرفر…</div>
+<canvas id="cv" width="820" height="1000"></canvas>
+<div class="row">
+  <input id="txt" placeholder="اكتب هنا ثم أرسل (إيميل / كلمة مرور / كود)" autocomplete="off" autocapitalize="off">
+  <button id="sendtxt">إرسال</button>
+</div>
+<div class="row">
+  <button data-k="Enter">Enter</button><button data-k="Tab">Tab</button>
+  <button data-k="Backspace">⌫</button><button data-k="Escape">Esc</button>
+  <button id="save">حفظ الجلسة</button>
+</div>
+<small id="url"></small>
+<script>
+const $ = (id) => document.getElementById(id);
+const cv = $("cv"), g = cv.getContext("2d");
+const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/login");
+ws.binaryType = "blob";
+const send = (o) => ws.readyState === 1 && ws.send(JSON.stringify(o));
+const say = (t, c = "") => { $("msg").className = c; $("msg").textContent = t; };
+
+ws.onopen = () => say("متصل. سجّل الدخول داخل الإطار أدناه (انقر/مرّر بإصبعك).");
+ws.onclose = () => say("انقطع الاتصال", "err");
+ws.onmessage = async (e) => {
+  if (typeof e.data !== "string") {
+    const bmp = await createImageBitmap(e.data);
+    if (cv.width !== bmp.width || cv.height !== bmp.height) { cv.width = bmp.width; cv.height = bmp.height; }
+    g.drawImage(bmp, 0, 0); bmp.close(); return;
+  }
+  const m = JSON.parse(e.data);
+  if (m.t === "error") say(m.v, "err");
+  else if (m.t === "state") { $("url").textContent = m.url; if (m.loggedIn) say("تم الدخول — جارٍ حفظ الجلسة…", "ok"); }
+  else if (m.t === "saved") say("✅ حُفظت الجلسة على السيرفر. يمكنك العودة للصفحة الرئيسية.", "ok");
+};
+
+// pointer: tap = click, drag = scroll
+const pos = (ev) => { const r = cv.getBoundingClientRect(); return { x: (ev.clientX - r.left) * cv.width / r.width, y: (ev.clientY - r.top) * cv.height / r.height }; };
+let down = null, moved = false, lastY = 0;
+cv.addEventListener("pointerdown", (ev) => { down = pos(ev); lastY = down.y; moved = false; cv.setPointerCapture(ev.pointerId); });
+cv.addEventListener("pointermove", (ev) => {
+  if (!down) return;
+  const p = pos(ev);
+  if (Math.abs(p.y - down.y) > 10 || Math.abs(p.x - down.x) > 10) moved = true;
+  if (moved) { const dy = lastY - p.y; if (Math.abs(dy) > 4) { send({ t: "scroll", x: p.x, y: p.y, dy }); lastY = p.y; } }
+});
+cv.addEventListener("pointerup", (ev) => { if (down && !moved) { const p = pos(ev); send({ t: "click", x: p.x, y: p.y }); } down = null; });
+cv.addEventListener("wheel", (ev) => { ev.preventDefault(); const p = pos(ev); send({ t: "scroll", x: p.x, y: p.y, dy: ev.deltaY }); }, { passive: false });
+
+$("sendtxt").onclick = () => { if ($("txt").value) { send({ t: "text", v: $("txt").value }); $("txt").value = ""; } };
+$("txt").addEventListener("keydown", (e) => { if (e.key === "Enter") $("sendtxt").click(); });
+document.querySelectorAll("button[data-k]").forEach((b) => (b.onclick = () => send({ t: "key", k: b.dataset.k })));
+$("save").onclick = () => send({ t: "save" });
+</script>
+</body>
+</html>

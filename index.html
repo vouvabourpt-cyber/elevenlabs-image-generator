@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مولّد الصور</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,sans-serif;max-width:680px;margin:0 auto;padding:16px;background:#0f0f10;color:#eee}
+  textarea,select,button{width:100%;padding:12px;margin:6px 0;border-radius:10px;border:1px solid #2c2c2e;background:#1a1a1c;color:#eee;font-size:16px;font-family:inherit}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  label{font-size:12px;color:#8a8a8e;display:block}
+  #go{background:#2f6df6;border:0;font-weight:700}
+  #go:disabled{opacity:.5}
+  #msg{white-space:pre-wrap;font-size:14px;color:#9ab;min-height:20px}
+  .err{color:#ff7b7b!important}
+  #out img{width:100%;border-radius:10px;margin-top:10px}
+  #hist{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+  #hist img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer}
+  details{margin-top:16px;color:#8a8a8e}
+  a{color:#6aa8ff}
+  .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;background:#222}
+  .ok{color:#6fdc8c}.bad{color:#ff7b7b}
+</style>
+</head>
+<body>
+<h3>مولّد الصور <span id="st" class="pill">…</span> <a href="/login.html" style="font-size:13px">دخول عن بُعد</a></h3>
+
+<textarea id="prompt" rows="4" placeholder="وصف الصورة…"></textarea>
+
+<label>النموذج</label><select id="model"></select>
+<div class="grid">
+  <div><label>الأبعاد</label><select id="aspect"></select></div>
+  <div><label>الدقة</label><select id="resolution"></select></div>
+</div>
+<label>القوة (الجودة)</label><select id="strength"></select>
+
+<button id="go">إنشاء</button>
+<div id="msg"></div>
+<div id="out"></div>
+<div id="hist"></div>
+
+<details>
+  <summary>تحديث الكوكيز</summary>
+  <textarea id="ck" rows="5" placeholder="الصق JSON الكوكيز هنا (EditThisCookie)"></textarea>
+  <button id="saveck">حفظ وإعادة الاتصال</button>
+</details>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fill = (id, arr, def) => { $(id).innerHTML = arr.map(v => `<option>${v}</option>`).join(""); if (def && arr.includes(def)) $(id).value = def; };
+
+async function loadOptions() {
+  const o = await (await fetch("/api/options")).json();
+  fill("model", o.models); fill("aspect", o.aspect, "1:1"); fill("resolution", o.resolution, "2K"); fill("strength", o.strength, "High");
+}
+async function loadHist() {
+  const h = await (await fetch("/api/history")).json();
+  $("hist").innerHTML = h.map(u => `<img src="${u}" loading="lazy" onclick="show('${u}')">`).join("");
+}
+function show(u) { $("out").innerHTML = `<img src="${u}"><p><a href="${u}" download>تحميل</a></p>`; }
+async function checkSession(fresh) {
+  const s = await (await fetch("/api/status" + (fresh ? "?fresh=1" : ""))).json();
+  const t = s.loggedIn === true ? ["متصل بالحساب", "ok"] : s.loggedIn === false ? ["غير متصل — اضغط دخول عن بُعد", "bad"] : [s.hasSaved ? "جلسة محفوظة (لم تُفحص)" : "لا توجد جلسة", ""];
+  $("st").textContent = t[0]; $("st").className = "pill " + t[1];
+  if (s.loggedIn === false && s.error) { $("msg").className = "err"; $("msg").textContent = s.error; }
+}
+
+$("go").onclick = async () => {
+  $("go").disabled = true; $("msg").className = ""; $("out").innerHTML = "";
+  const t0 = Date.now(); let last = "في الطابور…";
+  const tick = setInterval(() => $("msg").textContent = `${last} — ${((Date.now()-t0)/1000)|0}ث`, 500);
+  try {
+    const r = await fetch("/api/generate", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ prompt: $("prompt").value, model: $("model").value, aspect: $("aspect").value, resolution: $("resolution").value, strength: $("strength").value }) });
+    const j0 = await r.json();
+    if (!r.ok) throw new Error(j0.error);
+    for (;;) {
+      await new Promise(r => setTimeout(r, 1500));
+      const j = await (await fetch("/api/jobs/" + j0.jobId)).json();
+      if (j.state === "queued") last = `في الطابور (${j.position})`;
+      else if (j.log && j.log.length) last = j.log[j.log.length - 1];
+      if (j.state === "done") {
+        show(j.result.url); loadHist(); checkSession();
+        $("msg").textContent = `تم في ${((Date.now()-t0)/1000)|0}ث` + ((j.result.warnings||[]).length ? "\n⚠ " + j.result.warnings.join("\n⚠ ") : "");
+        break;
+      }
+      if (j.state === "failed") { if (/^AUTH/.test(j.error)) checkSession(); throw new Error(j.error + (j.errorShot ? "\n(لقطة الخطأ: " + j.errorShot + ")" : "")); }
+    }
+  } catch (e) { $("msg").className = "err"; $("msg").textContent = e.message; }
+  clearInterval(tick); $("go").disabled = false;
+};
+
+$("saveck").onclick = async () => {
+  const r = await fetch("/api/cookies", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ cookies: $("ck").value }) });
+  const j = await r.json();
+  $("msg").className = r.ok ? "" : "err"; $("msg").textContent = r.ok ? `حُفظت ${j.count} كوكيز` : j.error;
+  if (r.ok) { $("ck").value = ""; checkSession(true); }
+};
+
+loadOptions(); loadHist(); checkSession(true);
+</script>
+</body>
+</html>

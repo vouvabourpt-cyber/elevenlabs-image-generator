@@ -1,0 +1,28 @@
+{
+  "url": "https://elevenlabs.io/app/image-video",
+  "timeoutMs": 300000,
+  "headless": true,
+  "generateButton": "^\\s*(generate|create|إنشاء|توليد)",
+  "models": [
+    { "label": "GPT Image 2.5 Sunburst", "match": "GPT Image 2\\.5.*Sunburst|Sunburst" },
+    { "label": "GPT Image 2.5 Flare", "match": "GPT Image 2\\.5.*Flare|Flare" }
+  ],
+  "aspect": {
+    "triggerPattern": "^\\s*\\d+\\s*:\\s*\\d+\\s*$|aspect",
+    "options": ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "5:4", "4:5", "2:1", "1:2", "3:1", "1:3"]
+  },
+  "resolution": {
+    "triggerPattern": "^\\s*(1K|2K|4K|custom)\\s*$|resolution",
+    "options": ["1K", "2K", "4K"]
+  },
+  "strength": {
+    "triggerPattern": "^\\s*(low|medium|high|extra high|x-?high|maximum|max)\\s*$|quality",
+    "options": [
+      { "label": "Low", "match": "low" },
+      { "label": "Medium", "match": "medium" },
+      { "label": "High", "match": "high" },
+      { "label": "Extra High", "match": "extra[\\s-]*high|x[\\s-]*high" },
+      { "label": "Maximum", "match": "maximum|max" }
+    ]
+  }
+}
