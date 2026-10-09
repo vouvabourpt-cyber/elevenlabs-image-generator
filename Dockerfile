@@ -6,7 +6,6 @@ RUN npm ci --omit=dev --no-audit --no-fund \
  && npx playwright install --with-deps chromium \
  && rm -rf /var/lib/apt/lists/*
 COPY server.js config.json index.html login.html ./
-COPY public ./public
 RUN mkdir -p /tmp/data/downloads && chown -R node:node /app /tmp/data
 USER node
 EXPOSE 7860
